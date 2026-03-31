@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>04-02 基礎掃描器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-3xl">
+      <h1 class="mb-4 text-xl font-semibold">練習 04-02｜動物 QR 配對（1～6）</h1>
+
+      <div class="mb-4 rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-sm text-slate-200">
+        <p class="font-semibold text-slate-100">遊戲說明</p>
+        <p class="mt-1 text-slate-300">
+          畫面會隨機出現一種動物。請舉起「對應數字（1～6）」的 QRCode 給攝影機掃到；正確就播放對應數字音檔並自動換下一題。
+        </p>
+        <p class="mt-2 text-xs text-slate-400">
+          對應表：1 貓、2 狗、3 兔、4 鳥、5 鼠、6 狐
+        </p>
+      </div>
+
+      <div class="mb-4 grid gap-3 md:grid-cols-2">
+        <div class="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+          <p class="text-sm text-slate-200">目前題目</p>
+          <div class="mt-2 flex items-center gap-3">
+            <img
+              id="animalImg"
+              alt="animal"
+              class="h-24 w-24 rounded-lg border border-slate-700 bg-slate-950 object-contain"
+            />
+            <div class="text-sm">
+              <div id="animalText" class="font-semibold text-slate-100">尚未開始</div>
+              <div id="animalHint" class="mt-1 text-xs text-slate-400">按「開始」後會出題</div>
+            </div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button
+              id="start"
+              class="rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200"
+            >
+              開啟攝影機 / 開始
+            </button>
+            <button
+              id="next"
+              type="button"
+              class="rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled
+            >
+              下一題
+            </button>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+          <p class="text-sm text-slate-200">掃描結果</p>
+          <p id="result" class="mt-2 rounded-md border border-slate-700 bg-slate-950 p-2 font-mono text-sm text-slate-200">
+            尚未掃描
+          </p>
+          <p id="judge" class="mt-2 text-sm text-slate-300">狀態：等待開始</p>
+        </div>
+      </div>
+
+      <div class="relative inline-block">
+        <video id="video" class="hidden" playsinline muted></video>
+        <canvas id="canvas" class="max-h-[70vh] rounded-lg border border-cyan-500/30 bg-black"></canvas>
+      </div>
+
+      <div class="mt-4 rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-sm text-slate-200">
+        <p class="text-slate-100">答對音效播放器</p>
+        <p class="mt-1 text-xs text-slate-400">
+          如果瀏覽器顯示「已阻止 音訊 自動播放」，請在下面播放器按一次播放鍵授權，之後答對就會自動播放音效。
+        </p>
+        <audio
+          id="fxPlayer"
+          class="mt-2 w-full"
+          controls
+          preload="auto"
+          src="assets/audio/4.mp3"
+        ></audio>
+      </div>
+    </div>
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const animalImg = document.getElementById("animalImg");
+      const animalText = document.getElementById("animalText");
+      const animalHint = document.getElementById("animalHint");
+      const resultEl = document.getElementById("result");
+      const judgeEl = document.getElementById("judge");
+      const nextBtn = document.getElementById("next");
+      const fxPlayer = document.getElementById("fxPlayer");
+
+      const animals = [
+        {
+          id: 1,
+          name: "貓",
+          img: "assets/images/cat.png",
+          audio: "https://dict.youdao.com/dictvoice?audio=one&type=2",
+        },
+        {
+          id: 2,
+          name: "狗",
+          img: "assets/images/dog.png",
+          audio: "https://dict.youdao.com/dictvoice?audio=two&type=2",
+        },
+        {
+          id: 3,
+          name: "兔",
+          img: "assets/images/rabbit.png",
+          audio: "https://dict.youdao.com/dictvoice?audio=three&type=2",
+        },
+        {
+          id: 4,
+          name: "鳥",
+          img: "assets/images/bird.png",
+          audio: "https://dict.youdao.com/dictvoice?audio=four&type=2",
+        },
+        {
+          id: 5,
+          name: "鼠",
+          img: "assets/images/mouse.png",
+          audio: "https://dict.youdao.com/dictvoice?audio=five&type=2",
+        },
+        {
+          id: 6,
+          name: "狐",
+          img: "assets/images/fox.png",
+          audio: "https://dict.youdao.com/dictvoice?audio=six&type=2",
+        },
+      ];
+
+      let currentQuestion = null; // animals[i]
+      let cameraStarted = false;
+      let hasAnsweredCurrent = false; // 已經答對目前這題（等待按「下一題」）
+      let isPlayingAnswer = false; // 正在播放答對音效
+
+      // 避免同一個 QRCode 在鏡頭前停留時連續觸發
+      let lastAcceptedAt = 0;
+      const ACCEPT_COOLDOWN_MS = 1200;
+      let lastSeenData = "";
+      let lastSeenAt = 0;
+      const SAME_DATA_RESET_MS = 700;
+
+      // 讓播放器一開始就有一個可播放的音檔，方便先測試授權
+      // 這裡使用一個公開的短音效範例，與 1~6 題目的音檔無關
+      fxPlayer.src = "https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3";
+
+      function pickRandomQuestion() {
+        let next = animals[Math.floor(Math.random() * animals.length)];
+        if (currentQuestion && animals.length > 1) {
+          let tries = 0;
+          while (next.id === currentQuestion.id && tries < 10) {
+            next = animals[Math.floor(Math.random() * animals.length)];
+            tries++;
+          }
+        }
+        currentQuestion = next;
+        animalImg.src = new URL(currentQuestion.img, window.location.href).href;
+        animalText.textContent = `請出示：${currentQuestion.name}（數字 ${currentQuestion.id}）`;
+        animalHint.textContent = "把對應數字（1～6）的 QRCode 放到鏡頭前";
+        judgeEl.className = "mt-2 text-sm text-slate-300";
+        judgeEl.textContent = "狀態：等待掃描正確 QRCode…";
+        hasAnsweredCurrent = false;
+        isPlayingAnswer = false;
+      }
+
+      function parseQrToNumber(data) {
+        const s = String(data ?? "").trim();
+        if (!/^[1-6]$/.test(s)) return null;
+        return Number(s);
+      }
+
+      async function playNumberSound(n) {
+        const item = animals.find((a) => a.id === n);
+        if (!item) return;
+        const targetUrl = new URL(item.audio, window.location.href).href;
+
+        // 先切換到正確音檔，並嘗試自動播放
+        fxPlayer.pause();
+        fxPlayer.currentTime = 0;
+        if (fxPlayer.src !== targetUrl) {
+          fxPlayer.src = targetUrl;
+          fxPlayer.load();
+        }
+        try {
+          isPlayingAnswer = true;
+          await fxPlayer.play();
+          return true;
+        } catch (e) {
+          isPlayingAnswer = false;
+          judgeEl.className = "mt-2 text-sm text-amber-200";
+          judgeEl.textContent =
+            "狀態：瀏覽器阻擋自動播放。請在下方播放器按一次播放（播完後再按「下一題」）。";
+          return false;
+        }
+      }
+
+      // 如果學生自己讓音檔播放完，我們在狀態文字上提醒可以按下一題
+      fxPlayer.addEventListener("ended", () => {
+        isPlayingAnswer = false;
+        if (hasAnsweredCurrent) {
+          judgeEl.className = "mt-2 text-sm text-lime-200";
+          judgeEl.textContent = "音檔播放完畢，請按「下一題」切換新題目。";
+        }
+      });
+
+      function drawCornerPath(loc) {
+        const c = loc;
+        ctx.beginPath();
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = 3;
+        ctx.moveTo(c.topLeftCorner.x, c.topLeftCorner.y);
+        ctx.lineTo(c.topRightCorner.x, c.topRightCorner.y);
+        ctx.lineTo(c.bottomRightCorner.x, c.bottomRightCorner.y);
+        ctx.lineTo(c.bottomLeftCorner.x, c.bottomLeftCorner.y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      function loop() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+          if (code) {
+            drawCornerPath(code.location);
+            resultEl.textContent = "內容：" + code.data;
+
+            // 如果這一題已經答對了（正在等待按「下一題」），則只顯示內容，不再進行判斷
+            if (hasAnsweredCurrent) {
+              requestAnimationFrame(loop);
+              return;
+            }
+
+            const now = Date.now();
+            if (code.data !== lastSeenData) {
+              lastSeenData = code.data;
+              lastSeenAt = now;
+            } else if (now - lastSeenAt > SAME_DATA_RESET_MS) {
+              // 同一個內容停留太久就重置一次，避免永遠鎖住
+              lastSeenAt = now;
+            }
+
+            const n = parseQrToNumber(code.data);
+            if (!currentQuestion) {
+              judgeEl.className = "mt-2 text-sm text-slate-300";
+              judgeEl.textContent = "狀態：尚未出題（請先按開始）";
+            } else if (n === null) {
+              judgeEl.className = "mt-2 text-sm text-amber-200";
+              judgeEl.textContent = "狀態：請使用內容為 1～6 的 QRCode";
+            } else {
+              if (n === currentQuestion.id) {
+                if (now - lastAcceptedAt >= ACCEPT_COOLDOWN_MS) {
+                  lastAcceptedAt = now;
+                  judgeEl.className = "mt-2 text-sm text-lime-300";
+                  judgeEl.textContent = `正確！你掃到 ${n}（${currentQuestion.name}）。正在自動播放音檔...`;
+
+                  playNumberSound(n).then((ok) => {
+                    if (ok) {
+                      hasAnsweredCurrent = true;
+                    } else {
+                      hasAnsweredCurrent = false;
+                    }
+                  });
+                }
+              } else {
+                judgeEl.className = "mt-2 text-sm text-rose-300";
+                judgeEl.textContent = `不正確：你掃到 ${n}，請找「${currentQuestion.id}（${currentQuestion.name}）」`;
+              }
+            }
+          } else {
+            resultEl.textContent = "未偵測到條碼";
+          }
+        }
+        requestAnimationFrame(loop);
+      }
+
+      nextBtn.addEventListener("click", () => {
+        if (!cameraStarted) return;
+        if (!hasAnsweredCurrent && currentQuestion) {
+          judgeEl.className = "mt-2 text-sm text-amber-200";
+          judgeEl.textContent = "請先答對目前這題並讓音檔播放完，再按「下一題」。";
+          return;
+        }
+        pickRandomQuestion();
+      });
+
+      document.getElementById("start").addEventListener("click", async () => {
+        if (!cameraStarted) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          video.srcObject = stream;
+          await video.play();
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          cameraStarted = true;
+          nextBtn.disabled = false;
+          pickRandomQuestion();
+          loop();
+        } else {
+          // 已開始就當作「換題」
+          if (!hasAnsweredCurrent && currentQuestion) {
+            judgeEl.className = "mt-2 text-sm text-amber-200";
+            judgeEl.textContent = "請先答對目前這題並讓音檔播放完，再換題。";
+          } else {
+            pickRandomQuestion();
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
