@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>03-02 顏色物體追蹤</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      body {
+        font-family: Inter, sans-serif;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-3xl">
+      <h1 class="mb-4 text-xl font-semibold">練習 03-02｜顏色控制音樂播放器</h1>
+      <p class="mb-2 text-sm text-slate-400">
+        開啟攝影機後，請分別取兩種顏色：一個控制播放/停止，另一個控制音量大小（可同時運作）。
+      </p>
+      <div class="mb-4 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+        <p class="mb-2 text-sm text-slate-300">音樂播放器</p>
+        <audio id="player" class="w-full" controls preload="auto"></audio>
+        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <label for="musicFile" class="rounded-md border border-slate-600 px-2 py-1 hover:border-cyan-400/60">選擇音樂檔</label>
+          <input id="musicFile" type="file" accept="audio/*" class="hidden" />
+          <button
+            id="scanMusicFolder"
+            type="button"
+            class="rounded-md border border-slate-600 px-2 py-1 text-slate-300 hover:border-cyan-400/60"
+          >
+            自動掃描音樂資料夾
+          </button>
+          <select
+            id="musicList"
+            class="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+          >
+            <option value="">掃描後可從這裡選曲</option>
+          </select>
+          <span id="musicName">尚未選擇音樂檔（請先載入檔案）</span>
+        </div>
+      </div>
+      <div class="mb-4 rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-sm">
+        <p class="mb-2 text-slate-200">雙色同時控制</p>
+        <p class="mb-1 text-slate-300">
+          目標顏色 A：第一次偵測到就開始播放；該顏色消失後，第二次偵測到就停止播放。
+        </p>
+        <p class="text-slate-300">
+          目標顏色 B：依顏色位置控制音量（越靠近畫面中心越大聲，越靠近邊緣越小聲）。
+        </p>
+      </div>
+      <button id="start" class="mb-2 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+        開啟攝影機
+      </button>
+      <button
+        id="pickToggleColor"
+        disabled
+        class="mb-4 ml-2 rounded-xl border border-lime-400/40 bg-lime-500/10 px-4 py-2 text-sm text-lime-200 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        取色 A（播放/停止）
+      </button>
+      <button
+        id="pickVolumeColor"
+        disabled
+        class="mb-4 ml-2 rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        取色 B（音量控制）
+      </button>
+      <div class="relative inline-block">
+        <video id="video" class="hidden" playsinline muted></video>
+        <canvas id="canvas" class="max-h-[70vh] rounded-lg border border-cyan-500/30 bg-black"></canvas>
+      </div>
+      <p id="statusToggle" class="mt-4 rounded-lg border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-300">
+        播放控制（A）：尚未選擇目標顏色
+      </p>
+      <p id="statusVolume" class="mt-3 rounded-lg border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-300">
+        音量控制（B）：尚未選擇目標顏色
+      </p>
+      <p id="musicStatus" class="mt-3 rounded-lg border border-cyan-500/30 bg-cyan-950/30 p-3 text-sm text-cyan-200">
+        音樂狀態：尚未播放
+      </p>
+    </div>
+    <script>
+      const HUE_TOL = 12;
+      const SAT_TOL = 55;
+      const VAL_TOL = 55;
+      const MIN_PIXELS = 120;
+      const SAMPLE_RADIUS = 4;
+      let toggleTargetColor = null;
+      let toggleTargetHSV = null;
+      let volumeTargetColor = null;
+      let volumeTargetHSV = null;
+
+      // 用來判斷使用者目前是在取色 A 還是取色 B
+      let pickingTarget = null; // "toggle" | "volume" | null
+
+      // 播放/停止（A）狀態
+      let togglePrevDetected = false;
+      let hasStartedOnFirstAppearance = false;
+      let hasDisappearedAfterStart = false;
+
+      // 音量控制（B）狀態（用來判斷第一次偵測邊緣）
+      let volumePrevDetected = false;
+ 
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const statusToggleEl = document.getElementById("statusToggle");
+      const statusVolumeEl = document.getElementById("statusVolume");
+      const musicStatusEl = document.getElementById("musicStatus");
+      const pickToggleBtn = document.getElementById("pickToggleColor");
+      const pickVolumeBtn = document.getElementById("pickVolumeColor");
+      const player = document.getElementById("player");
+      const musicFileInput = document.getElementById("musicFile");
+      const musicNameEl = document.getElementById("musicName");
+      const scanMusicFolderBtn = document.getElementById("scanMusicFolder");
+      const musicListEl = document.getElementById("musicList");
+      let scannedTracks = [];
+      let currentObjectUrl = "";
+ 
+      function rgbToHsv(r, g, b) {
+        const rn = r / 255;
+        const gn = g / 255;
+        const bn = b / 255;
+        const max = Math.max(rn, gn, bn);
+        const min = Math.min(rn, gn, bn);
+        const d = max - min;
+        let h = 0;
+        if (d !== 0) {
+          if (max === rn) h = ((gn - bn) / d) % 6;
+          else if (max === gn) h = (bn - rn) / d + 2;
+          else h = (rn - gn) / d + 4;
+          h *= 60;
+          if (h < 0) h += 360;
+        }
+        const s = max === 0 ? 0 : d / max;
+        const v = max;
+        return { h, s: s * 255, v: v * 255 };
+      }
+ 
+      function hueDiff(a, b) {
+        const d = Math.abs(a - b);
+        return Math.min(d, 360 - d);
+      }
+ 
+      function isMatchHSV(hsv, target) {
+        return (
+          hueDiff(hsv.h, target.h) <= HUE_TOL &&
+          Math.abs(hsv.s - target.s) <= SAT_TOL &&
+          Math.abs(hsv.v - target.v) <= VAL_TOL
+        );
+      }
+ 
+      function sampleAverageRgb(x, y) {
+        const sx = Math.max(0, x - SAMPLE_RADIUS);
+        const sy = Math.max(0, y - SAMPLE_RADIUS);
+        const ex = Math.min(canvas.width - 1, x + SAMPLE_RADIUS);
+        const ey = Math.min(canvas.height - 1, y + SAMPLE_RADIUS);
+        const w = ex - sx + 1;
+        const h = ey - sy + 1;
+        const data = ctx.getImageData(sx, sy, w, h).data;
+ 
+        let sr = 0;
+        let sg = 0;
+        let sb = 0;
+        let n = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          sr += data[i];
+          sg += data[i + 1];
+          sb += data[i + 2];
+          n++;
+        }
+        return { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) };
+      }
+ 
+      function setMusicStatus(text, tone = "info") {
+        if (tone === "play") {
+          musicStatusEl.className =
+            "mt-3 rounded-lg border border-lime-400/50 bg-lime-950/40 p-3 text-sm text-lime-200";
+        } else if (tone === "stop") {
+          musicStatusEl.className =
+            "mt-3 rounded-lg border border-amber-400/50 bg-amber-950/40 p-3 text-sm text-amber-200";
+        } else {
+          musicStatusEl.className =
+            "mt-3 rounded-lg border border-cyan-500/30 bg-cyan-950/30 p-3 text-sm text-cyan-200";
+        }
+        musicStatusEl.textContent = "音樂狀態：" + text;
+      }
+ 
+      async function safePlay() {
+        if (!player.src) {
+          setMusicStatus("尚未載入音樂檔，請先選擇音樂。", "stop");
+          return false;
+        }
+        try {
+          await player.play();
+          return true;
+        } catch (err) {
+          setMusicStatus("無法自動播放，請先手動按播放鍵授權。", "stop");
+          return false;
+        }
+      }
+ 
+      function stopMusic() {
+        player.pause();
+        player.currentTime = 0;
+      }
+ 
+      function loadTrackFromFile(file, label) {
+        if (currentObjectUrl) {
+          URL.revokeObjectURL(currentObjectUrl);
+        }
+        currentObjectUrl = URL.createObjectURL(file);
+        player.src = currentObjectUrl;
+        musicNameEl.textContent = "已載入：" + label;
+        setMusicStatus("音樂已載入，等待顏色觸發播放。", "info");
+      }
+ 
+      function isAudioFileName(name) {
+        return /\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(name);
+      }
+ 
+      async function collectAudioFilesFromDirectory(dirHandle, prefix = "") {
+        const files = [];
+        for await (const entry of dirHandle.values()) {
+          if (entry.kind === "file" && isAudioFileName(entry.name)) {
+            files.push({ fileHandle: entry, path: prefix + entry.name });
+          } else if (entry.kind === "directory") {
+            const nested = await collectAudioFilesFromDirectory(entry, prefix + entry.name + "/");
+            files.push(...nested);
+          }
+        }
+        return files;
+      }
+ 
+      function clamp01(v) {
+        return Math.max(0, Math.min(1, v));
+      }
+ 
+      function updateToggleMode(detected) {
+        const risingEdge = detected && !togglePrevDetected;
+        const fallingEdge = !detected && togglePrevDetected;
+ 
+        if (risingEdge) {
+          if (!hasStartedOnFirstAppearance) {
+            safePlay().then((ok) => {
+              if (ok) {
+                hasStartedOnFirstAppearance = true;
+                hasDisappearedAfterStart = false;
+                setMusicStatus("已開始播放（第一次偵測到目標色）。", "play");
+              }
+            });
+          } else if (hasDisappearedAfterStart) {
+            stopMusic();
+            setMusicStatus("已停止播放（消失後第二次偵測到目標色）。", "stop");
+            hasStartedOnFirstAppearance = false;
+            hasDisappearedAfterStart = false;
+          }
+        }
+ 
+        if (fallingEdge && hasStartedOnFirstAppearance) {
+          hasDisappearedAfterStart = true;
+        }
+ 
+        togglePrevDetected = detected;
+      }
+ 
+      function computeVolumeFromCenter(cx, cy) {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const dist = Math.hypot(cx - centerX, cy - centerY);
+        const maxDist = Math.hypot(centerX, centerY);
+        return clamp01(1 - dist / maxDist);
+      }
+ 
+      function detectLargestBlobForTarget(img, targetHSV) {
+        const w = canvas.width;
+        const h = canvas.height;
+        const d = img.data;
+
+        const mask = new Uint8Array(w * h);
+        let matchedPixelCount = 0;
+
+        // 建立遮罩：此色的像素為 1
+        for (let py = 0; py < h; py++) {
+          for (let px = 0; px < w; px++) {
+            const p = py * w + px;
+            const idx = p * 4;
+            const hsv = rgbToHsv(d[idx], d[idx + 1], d[idx + 2]);
+            if (isMatchHSV(hsv, targetHSV)) {
+              mask[p] = 1;
+              matchedPixelCount++;
+            }
+          }
+        }
+
+        if (matchedPixelCount === 0) return null;
+
+        const visited = new Uint8Array(w * h);
+        const qx = new Int32Array(w * h);
+        const qy = new Int32Array(w * h);
+        let best = null;
+
+        for (let py = 0; py < h; py++) {
+          for (let px = 0; px < w; px++) {
+            const start = py * w + px;
+            if (!mask[start] || visited[start]) continue;
+
+            let head = 0;
+            let tail = 0;
+            qx[tail] = px;
+            qy[tail] = py;
+            tail++;
+            visited[start] = 1;
+
+            let n = 0;
+            let sumX = 0;
+            let sumY = 0;
+            let minX = w;
+            let minY = h;
+            let maxX = 0;
+            let maxY = 0;
+            let sr = 0;
+            let sg = 0;
+            let sb = 0;
+
+            while (head < tail) {
+              const x = qx[head];
+              const y = qy[head];
+              head++;
+              const p = y * w + x;
+              const idx = p * 4;
+
+              n++;
+              sumX += x;
+              sumY += y;
+              sr += d[idx];
+              sg += d[idx + 1];
+              sb += d[idx + 2];
+              if (x < minX) minX = x;
+              if (y < minY) minY = y;
+              if (x > maxX) maxX = x;
+              if (y > maxY) maxY = y;
+
+              if (x > 0) {
+                const np = p - 1;
+                if (mask[np] && !visited[np]) {
+                  visited[np] = 1;
+                  qx[tail] = x - 1;
+                  qy[tail] = y;
+                  tail++;
+                }
+              }
+              if (x < w - 1) {
+                const np = p + 1;
+                if (mask[np] && !visited[np]) {
+                  visited[np] = 1;
+                  qx[tail] = x + 1;
+                  qy[tail] = y;
+                  tail++;
+                }
+              }
+              if (y > 0) {
+                const np = p - w;
+                if (mask[np] && !visited[np]) {
+                  visited[np] = 1;
+                  qx[tail] = x;
+                  qy[tail] = y - 1;
+                  tail++;
+                }
+              }
+              if (y < h - 1) {
+                const np = p + w;
+                if (mask[np] && !visited[np]) {
+                  visited[np] = 1;
+                  qx[tail] = x;
+                  qy[tail] = y + 1;
+                  tail++;
+                }
+              }
+            }
+
+            if (n > MIN_PIXELS && (!best || n > best.n)) {
+              const cx = sumX / n;
+              const cy = sumY / n;
+              best = {
+                n,
+                cx,
+                cy,
+                minX,
+                minY,
+                maxX,
+                maxY,
+                avg: { r: sr / n, g: sg / n, b: sb / n },
+              };
+            }
+          }
+        }
+
+        return best;
+      }
+
+      function loop() {
+        if (video.videoWidth) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+ 
+          const shouldDetect = (toggleTargetHSV || volumeTargetHSV) && video.videoWidth;
+          const img = shouldDetect ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
+
+          // === A：播放/停止（toggle） ===
+          if (toggleTargetHSV) {
+            const best = detectLargestBlobForTarget(img, toggleTargetHSV);
+            if (best) {
+              ctx.strokeStyle = "rgba(132, 204, 22, 0.95)";
+              ctx.lineWidth = 3;
+              ctx.strokeRect(
+                best.minX,
+                best.minY,
+                best.maxX - best.minX,
+                best.maxY - best.minY
+              );
+
+              ctx.beginPath();
+              ctx.fillStyle = "rgba(234, 179, 8, 0.95)";
+              ctx.arc(best.cx, best.cy, 7, 0, Math.PI * 2);
+              ctx.fill();
+
+              statusToggleEl.className =
+                "mt-4 rounded-lg border border-lime-400/60 bg-lime-950/50 p-3 text-sm text-lime-200";
+              statusToggleEl.textContent =
+                "追蹤中（A）｜目標 RGB：(" +
+                toggleTargetColor.r +
+                ", " +
+                toggleTargetColor.g +
+                ", " +
+                toggleTargetColor.b +
+                ")｜目前平均 RGB：(" +
+                best.avg.r.toFixed(0) +
+                ", " +
+                best.avg.g.toFixed(0) +
+                ", " +
+                best.avg.b.toFixed(0) +
+                ")｜色塊像素：" +
+                best.n;
+
+              updateToggleMode(true);
+            } else {
+              statusToggleEl.className =
+                "mt-4 rounded-lg border border-amber-400/50 bg-amber-950/40 p-3 text-sm text-amber-200";
+              statusToggleEl.textContent =
+                "已選目標色（A）RGB：(" +
+                toggleTargetColor.r +
+                ", " +
+                toggleTargetColor.g +
+                ", " +
+                toggleTargetColor.b +
+                ")，目前畫面找不到明確的單一色塊。";
+              updateToggleMode(false);
+            }
+          } else {
+            togglePrevDetected = false;
+            statusToggleEl.className =
+              "mt-4 rounded-lg border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-300";
+            statusToggleEl.textContent =
+              pickingTarget === "toggle" ? "請點擊畫面中的目標顏色（A）..." : "播放控制（A）：尚未選擇目標顏色";
+          }
+
+          // === B：音量控制（distanceVolume） ===
+          if (volumeTargetHSV) {
+            const best = detectLargestBlobForTarget(img, volumeTargetHSV);
+            if (best) {
+              ctx.strokeStyle = "rgba(34, 211, 238, 0.95)";
+              ctx.lineWidth = 3;
+              ctx.strokeRect(
+                best.minX,
+                best.minY,
+                best.maxX - best.minX,
+                best.maxY - best.minY
+              );
+
+              ctx.beginPath();
+              ctx.fillStyle = "rgba(56, 189, 248, 0.95)";
+              ctx.arc(best.cx, best.cy, 7, 0, Math.PI * 2);
+              ctx.fill();
+
+              const volume = computeVolumeFromCenter(best.cx, best.cy);
+              player.volume = volume;
+
+              const risingEdge = !volumePrevDetected;
+              if (risingEdge && player.paused) {
+                safePlay().then((ok) => {
+                  if (ok) {
+                    setMusicStatus("已開始播放（由音量控制顏色觸發）。", "play");
+                  }
+                });
+              }
+              volumePrevDetected = true;
+
+              statusVolumeEl.className =
+                "mt-3 rounded-lg border border-cyan-400/60 bg-cyan-950/50 p-3 text-sm text-cyan-200";
+              statusVolumeEl.textContent =
+                "追蹤中（B）｜目標 RGB：(" +
+                volumeTargetColor.r +
+                ", " +
+                volumeTargetColor.g +
+                ", " +
+                volumeTargetColor.b +
+                ")｜目前平均 RGB：(" +
+                best.avg.r.toFixed(0) +
+                ", " +
+                best.avg.g.toFixed(0) +
+                ", " +
+                best.avg.b.toFixed(0) +
+                ")｜色塊像素：" +
+                best.n +
+                "｜音量：" +
+                Math.round(volume * 100) +
+                "%（越靠近中心越大聲）";
+            } else {
+              player.volume = 0.05;
+              volumePrevDetected = false;
+              statusVolumeEl.className =
+                "mt-3 rounded-lg border border-amber-400/50 bg-amber-950/40 p-3 text-sm text-amber-200";
+              statusVolumeEl.textContent =
+                "已選目標色（B）RGB：(" +
+                volumeTargetColor.r +
+                ", " +
+                volumeTargetColor.g +
+                ", " +
+                volumeTargetColor.b +
+                ")，目前畫面找不到目標色；音量降至最低。";
+            }
+          } else {
+            player.volume = 0.05;
+            statusVolumeEl.className =
+              "mt-3 rounded-lg border border-slate-700 bg-slate-900/80 p-3 text-sm text-slate-300";
+            statusVolumeEl.textContent =
+              pickingTarget === "volume" ? "請點擊畫面中的目標顏色（B）..." : "音量控制（B）：尚未選擇目標顏色";
+          }
+        }
+ 
+        requestAnimationFrame(loop);
+      }
+ 
+      pickToggleBtn.addEventListener("click", () => {
+        pickingTarget = "toggle";
+        statusToggleEl.className =
+          "mt-4 rounded-lg border border-lime-400/40 bg-lime-950/40 p-3 text-sm text-lime-200";
+        statusToggleEl.textContent = "已選取取色模式：請在畫面點擊目標顏色（A）。";
+      });
+
+      pickVolumeBtn.addEventListener("click", () => {
+        pickingTarget = "volume";
+        statusVolumeEl.className =
+          "mt-3 rounded-lg border border-cyan-400/40 bg-cyan-950/40 p-3 text-sm text-cyan-200";
+        statusVolumeEl.textContent = "已選取取色模式：請在畫面點擊目標顏色（B）。";
+      });
+ 
+      musicFileInput.addEventListener("change", () => {
+        const file = musicFileInput.files?.[0];
+        if (!file) return;
+        loadTrackFromFile(file, file.name);
+      });
+ 
+      scanMusicFolderBtn.addEventListener("click", async () => {
+        if (!("showDirectoryPicker" in window)) {
+          setMusicStatus("目前瀏覽器不支援資料夾掃描，請改用「選擇音樂檔」。", "stop");
+          return;
+        }
+ 
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          setMusicStatus("正在掃描音樂檔...", "info");
+          const tracks = await collectAudioFilesFromDirectory(dirHandle);
+          tracks.sort((a, b) => a.path.localeCompare(b.path));
+          scannedTracks = tracks;
+ 
+          musicListEl.innerHTML = "";
+          const placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = "請選擇掃描到的音樂";
+          musicListEl.appendChild(placeholder);
+ 
+          for (let i = 0; i < scannedTracks.length; i++) {
+            const op = document.createElement("option");
+            op.value = String(i);
+            op.textContent = scannedTracks[i].path;
+            musicListEl.appendChild(op);
+          }
+ 
+          if (scannedTracks.length === 0) {
+            setMusicStatus("掃描完成，但資料夾內沒有可用音檔。", "stop");
+            musicNameEl.textContent = "未找到音檔";
+            return;
+          }
+ 
+          setMusicStatus("掃描完成，共找到 " + scannedTracks.length + " 首音檔。", "info");
+          const firstFile = await scannedTracks[0].fileHandle.getFile();
+          loadTrackFromFile(firstFile, scannedTracks[0].path);
+          musicListEl.value = "0";
+        } catch (err) {
+          setMusicStatus("已取消資料夾掃描。", "stop");
+        }
+      });
+ 
+      musicListEl.addEventListener("change", async () => {
+        const idx = Number(musicListEl.value);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= scannedTracks.length) return;
+        const file = await scannedTracks[idx].fileHandle.getFile();
+        loadTrackFromFile(file, scannedTracks[idx].path);
+      });
+ 
+      canvas.addEventListener("click", (ev) => {
+        if (!pickingTarget || !video.videoWidth) return;
+ 
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = Math.floor((ev.clientX - rect.left) * scaleX);
+        const y = Math.floor((ev.clientY - rect.top) * scaleY);
+        if (pickingTarget === "toggle") {
+          toggleTargetColor = sampleAverageRgb(x, y);
+          toggleTargetHSV = rgbToHsv(toggleTargetColor.r, toggleTargetColor.g, toggleTargetColor.b);
+          pickingTarget = null;
+          togglePrevDetected = false;
+          hasStartedOnFirstAppearance = false;
+          hasDisappearedAfterStart = false;
+          statusToggleEl.textContent =
+            "已取色（A）RGB：(" +
+            toggleTargetColor.r +
+            ", " +
+            toggleTargetColor.g +
+            ", " +
+            toggleTargetColor.b +
+            ")，開始追蹤中。";
+        } else if (pickingTarget === "volume") {
+          volumeTargetColor = sampleAverageRgb(x, y);
+          volumeTargetHSV = rgbToHsv(volumeTargetColor.r, volumeTargetColor.g, volumeTargetColor.b);
+          pickingTarget = null;
+          volumePrevDetected = false;
+          statusVolumeEl.textContent =
+            "已取色（B）RGB：(" +
+            volumeTargetColor.r +
+            ", " +
+            volumeTargetColor.g +
+            ", " +
+            volumeTargetColor.b +
+            ")，開始追蹤中。";
+          player.volume = 0.05;
+        }
+      });
+ 
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        video.srcObject = stream;
+        await video.play();
+ 
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        pickToggleBtn.disabled = false;
+        pickVolumeBtn.disabled = false;
+        setMusicStatus("攝影機已啟動，請先點擊取色。", "info");
+        statusToggleEl.textContent = "播放控制（A）：請先取色 A。";
+        statusVolumeEl.textContent = "音量控制（B）：請先取色 B。";
+        volumePrevDetected = false;
+        loop();
+      });
+    </script>
+  </body>
+</html>

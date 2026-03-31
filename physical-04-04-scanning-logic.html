@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>04-04 防誤觸掃描</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-3xl">
+      <h1 class="mb-4 text-xl font-semibold">練習 04-04｜掃描狀態機</h1>
+      <p class="mb-2 text-sm text-slate-400">
+        掃到內容後<strong>鎖定</strong>；須連續 <strong>2 秒</strong>畫面中完全無條碼才解鎖。
+      </p>
+      <button id="start" class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+        開啟攝影機
+      </button>
+      <p id="state" class="mb-2 font-mono text-sm text-lime-400"></p>
+      <div class="relative inline-block">
+        <video id="video" class="hidden" playsinline muted></video>
+        <canvas id="canvas" class="max-h-[60vh] rounded-lg border border-cyan-500/30 bg-black"></canvas>
+      </div>
+      <ul id="log" class="mt-4 max-h-40 list-inside list-disc overflow-y-auto font-mono text-xs text-slate-500"></ul>
+    </div>
+    <script>
+      const UNLOCK_MS = 2000;
+      const IDLE = "IDLE";
+      const LOCKED = "LOCKED";
+
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const stateEl = document.getElementById("state");
+      const logEl = document.getElementById("log");
+
+      let state = IDLE;
+      let noCodeSince = null;
+      let lastScan = "";
+
+      function log(msg) {
+        const li = document.createElement("li");
+        li.textContent = performance.now().toFixed(0) + "ms — " + msg;
+        logEl.prepend(li);
+      }
+
+      function loop() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
+          const now = performance.now();
+
+          if (code) {
+            noCodeSince = null;
+            if (state === IDLE && code.data !== lastScan) {
+              lastScan = code.data;
+              state = LOCKED;
+              log("鎖定，內容：" + code.data);
+            }
+          } else {
+            if (state === LOCKED) {
+              if (noCodeSince === null) noCodeSince = now;
+              if (now - noCodeSince >= UNLOCK_MS) {
+                state = IDLE;
+                noCodeSince = null;
+                lastScan = "";
+                log("解鎖，可掃描下一筆");
+              }
+            }
+          }
+
+          stateEl.textContent =
+            "狀態：" + state + (lastScan ? "　上次：" + lastScan : "");
+        }
+        requestAnimationFrame(loop);
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        loop();
+      });
+    </script>
+  </body>
+</html>

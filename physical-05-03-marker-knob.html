@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>05-03 數位旋鈕</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/cv.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/aruco.js"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 flex max-w-5xl flex-wrap gap-10">
+      <div>
+        <h1 class="mb-4 text-xl font-semibold">練習 05-03｜旋鈕角度</h1>
+        <button id="start" class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+          開啟攝影機
+        </button>
+        <div class="relative inline-block">
+          <video id="video" class="hidden" playsinline muted></video>
+          <canvas id="canvas" class="max-h-[60vh] rounded-lg border border-cyan-500/30 bg-black"></canvas>
+        </div>
+      </div>
+      <div class="flex flex-col items-center justify-center">
+        <p class="mb-2 font-mono text-sm text-slate-400">傾斜角（0–360°）</p>
+        <p id="deg" class="mb-6 font-mono text-3xl text-lime-400">—</p>
+        <div
+          class="relative h-48 w-48 rounded-full border-4 border-cyan-500/40 bg-slate-900"
+        >
+          <div
+            id="pointer"
+            class="absolute left-1/2 top-1/2 h-1.5 w-[42%] bg-gradient-to-r from-cyan-400 to-lime-400"
+            style="transform-origin: left center; transform: translate(0, -50%) rotate(0deg)"
+          ></div>
+          <span class="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-slate-500">0°</span>
+        </div>
+      </div>
+    </div>
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const degEl = document.getElementById("deg");
+      const pointer = document.getElementById("pointer");
+      const detector = new AR.Detector();
+
+      function markerAngleDeg(corners) {
+        const e0x = corners[1].x - corners[0].x;
+        const e0y = corners[1].y - corners[0].y;
+        let deg = (Math.atan2(e0y, e0x) * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+        return deg;
+      }
+
+      function loop() {
+        requestAnimationFrame(loop);
+        if (video.readyState < video.HAVE_CURRENT_DATA) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const markers = detector.detect(img);
+        if (markers.length) {
+          const deg = markerAngleDeg(markers[0].corners);
+          degEl.textContent = deg.toFixed(1) + "°";
+          pointer.style.transform = "translate(0, -50%) rotate(" + deg + "deg)";
+        }
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        loop();
+      });
+    </script>
+  </body>
+</html>

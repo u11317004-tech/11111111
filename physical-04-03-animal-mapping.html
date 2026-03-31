@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>04-03 動物圖鑑</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-3xl">
+      <h1 class="mb-4 text-xl font-semibold">練習 04-03｜動物圖鑑互動</h1>
+      <p class="mb-2 text-sm text-slate-400">掃描內容為 <code class="text-cyan-300">1</code> 或 <code class="text-cyan-300">2</code> 時顯示對應介紹。</p>
+      <button id="start" class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+        開啟攝影機
+      </button>
+      <div class="relative inline-block">
+        <video id="video" class="hidden" playsinline muted></video>
+        <canvas id="canvas" class="max-h-[60vh] rounded-lg border border-cyan-500/30 bg-black"></canvas>
+      </div>
+      <div id="panel" class="mt-6 rounded-xl border border-slate-700 bg-slate-900/80 p-4">
+        <p class="text-slate-500">請掃描印有數字 1 或 2 的 QR Code</p>
+      </div>
+    </div>
+    <script>
+      const ANIMALS = {
+        1: {
+          name: "獅子",
+          desc: "草原上的王者，群居貓科動物，以雄壯的鬃毛與吼聲聞名。",
+        },
+        2: {
+          name: "大象",
+          desc: "陸地上最大的哺乳類，長鼻與大耳有助散熱與取食。",
+        },
+      };
+
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const panel = document.getElementById("panel");
+
+      function playBeep() {
+        const ctxA = new AudioContext();
+        const o = ctxA.createOscillator();
+        const g = ctxA.createGain();
+        o.connect(g);
+        g.connect(ctxA.destination);
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.1, ctxA.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, ctxA.currentTime + 0.15);
+        o.start();
+        o.stop(ctxA.currentTime + 0.15);
+      }
+
+      function showAnimal(key) {
+        const a = ANIMALS[key];
+        if (!a) return;
+        panel.innerHTML =
+          "<h2 class=\"font-bold text-lime-400\">" +
+          a.name +
+          '</h2><p class="mt-2 text-slate-300">' +
+          a.desc +
+          '</p><button type="button" id="play-sound" class="mt-4 rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">播放提示音</button>';
+        document.getElementById("play-sound").addEventListener("click", playBeep);
+      }
+
+      let lastShown = null;
+      function loop() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
+          if (code) {
+            const d = code.data.trim();
+            const key = parseInt(d, 10);
+            if (ANIMALS[key] && lastShown !== key) {
+              lastShown = key;
+              showAnimal(key);
+            }
+          }
+        }
+        requestAnimationFrame(loop);
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        loop();
+      });
+    </script>
+  </body>
+</html>

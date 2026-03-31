@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>05-02 實體物件追蹤</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/cv.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/aruco.js"></script>
+    <style>
+      body { font-family: Inter, sans-serif; }
+      #floater { transition: left 0.05s linear, top 0.05s linear; }
+    </style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="relative z-20 text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-4xl">
+      <h1 class="mb-4 text-xl font-semibold">練習 05-02｜標記跟隨（鏡像補償）</h1>
+      <p class="mb-2 text-sm text-slate-400">
+        於 Canvas 上以 <code class="text-cyan-300">scale(-1,1)</code> 繪製影片並偵測，使標記座標與鏡像畫面一致。
+      </p>
+      <button id="start" class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+        開啟攝影機
+      </button>
+      <div id="wrap" class="relative inline-block overflow-hidden rounded-lg border border-cyan-500/30">
+        <video id="video" class="hidden" playsinline muted></video>
+        <canvas id="canvas" class="block"></canvas>
+        <button
+          id="floater"
+          type="button"
+          class="absolute z-10 rounded-full border-2 border-lime-400 bg-cyan-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg"
+        >
+          跟隨標記
+        </button>
+      </div>
+    </div>
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const wrap = document.getElementById("wrap");
+      const floater = document.getElementById("floater");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const detector = new AR.Detector();
+
+      function centerOf(m) {
+        let sx = 0,
+          sy = 0;
+        for (let i = 0; i < m.corners.length; i++) {
+          sx += m.corners[i].x;
+          sy += m.corners[i].y;
+        }
+        return { x: sx / 4, y: sy / 4 };
+      }
+
+      function loop() {
+        requestAnimationFrame(loop);
+        if (video.readyState < video.HAVE_CURRENT_DATA) return;
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.translate(-canvas.width, 0);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const markers = detector.detect(img);
+        if (markers.length) {
+          const c = centerOf(markers[0]);
+          const rect = wrap.getBoundingClientRect();
+          const scaleX = rect.width / canvas.width;
+          const scaleY = rect.height / canvas.height;
+          floater.style.left = c.x * scaleX - floater.offsetWidth / 2 + "px";
+          floater.style.top = c.y * scaleY - floater.offsetHeight / 2 + "px";
+        }
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        loop();
+      });
+    </script>
+  </body>
+</html>

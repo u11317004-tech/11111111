@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>06-01 實體混音台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/cv.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/aruco.js"></script>
+    <style>
+      body { font-family: Inter, sans-serif; }
+      #deck.effect-on { box-shadow: 0 0 40px rgba(34, 211, 238, 0.6); }
+    </style>
+  </head>
+  <body id="page" class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-5xl">
+      <h1 class="mb-2 text-2xl font-semibold">專案 06-01｜實體混音台</h1>
+      <p class="mb-6 text-sm text-slate-400">
+        掃描 QR 選曲（<code class="text-cyan-300">SONG_A</code> / <code class="text-cyan-300">SONG_B</code>）、ArUco 標記控制音量、拍手切換視覺特效。
+      </p>
+      <button
+        id="btn-start"
+        class="mb-6 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-200"
+      >
+        啟動攝影機與麥克風
+      </button>
+
+      <div class="grid gap-6 lg:grid-cols-2">
+        <div>
+          <p class="mb-2 text-xs uppercase text-slate-500">Camera</p>
+          <div class="relative inline-block overflow-hidden rounded-xl border border-cyan-500/30">
+            <video id="video" class="hidden" playsinline muted></video>
+            <canvas id="canvas" class="max-h-[50vh] bg-black"></canvas>
+          </div>
+        </div>
+        <div id="deck" class="rounded-xl border border-lime-500/30 bg-slate-900/80 p-6">
+          <p class="text-sm text-slate-400">目前曲目</p>
+          <p id="track" class="mt-1 text-2xl font-bold text-lime-400">—</p>
+          <p class="mt-6 text-sm text-slate-400">音量（標記旋轉角映射）</p>
+          <div class="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-800">
+            <div id="vol-bar" class="h-full w-0 bg-gradient-to-r from-cyan-500 to-lime-400 transition-[width]"></div>
+          </div>
+          <p id="vol-text" class="mt-2 font-mono text-sm text-cyan-200">0%</p>
+          <p class="mt-6 text-sm text-slate-400">拍手：切換霓虹特效</p>
+          <p id="clap-hint" class="mt-1 font-mono text-xs text-slate-500">等待偵測…</p>
+        </div>
+      </div>
+    </div>
+    <script>
+      const TRACKS = {
+        SONG_A: "宇宙節奏 A",
+        SONG_B: "霓虹律動 B",
+      };
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const trackEl = document.getElementById("track");
+      const volBar = document.getElementById("vol-bar");
+      const volText = document.getElementById("vol-text");
+      const deck = document.getElementById("deck");
+      const clapHint = document.getElementById("clap-hint");
+
+      const detector = new AR.Detector();
+      let audioCtx;
+      let analyser;
+      let dataArray;
+      let prevRms = 0;
+      let lastClap = 0;
+      const CLAP_DELTA = 0.09;
+      const COOLDOWN_MS = 500;
+
+      function computeRms(timeData) {
+        let sum = 0;
+        const n = timeData.length;
+        for (let i = 0; i < n; i++) {
+          const v = (timeData[i] - 128) / 128;
+          sum += v * v;
+        }
+        return Math.sqrt(sum / n);
+      }
+
+      function markerAngleDeg(corners) {
+        const e0x = corners[1].x - corners[0].x;
+        const e0y = corners[1].y - corners[0].y;
+        let deg = (Math.atan2(e0y, e0x) * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+        return deg;
+      }
+
+      function audioLoop() {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(dataArray);
+        const rms = computeRms(dataArray);
+        const delta = rms - prevRms;
+        const now = performance.now();
+        if (delta > CLAP_DELTA && rms > 0.02 && now - lastClap >= COOLDOWN_MS) {
+          lastClap = now;
+          deck.classList.toggle("effect-on");
+          clapHint.textContent = "特效：" + (deck.classList.contains("effect-on") ? "開啟" : "關閉");
+        }
+        prevRms = rms;
+        requestAnimationFrame(audioLoop);
+      }
+
+      function visionLoop() {
+        requestAnimationFrame(visionLoop);
+        if (video.readyState < video.HAVE_CURRENT_DATA) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
+        if (code && TRACKS[code.data.trim()]) {
+          trackEl.textContent = TRACKS[code.data.trim()];
+        }
+        const markers = detector.detect(img);
+        if (markers.length) {
+          const deg = markerAngleDeg(markers[0].corners);
+          const pct = Math.round((deg / 360) * 100);
+          volBar.style.width = pct + "%";
+          volText.textContent = pct + "%（角 " + deg.toFixed(0) + "°）";
+        }
+      }
+
+      document.getElementById("btn-start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: true,
+        });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        audioCtx = new AudioContext();
+        const src = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.fftSize);
+        src.connect(analyser);
+        audioLoop();
+        visionLoop();
+      });
+    </script>
+  </body>
+</html>

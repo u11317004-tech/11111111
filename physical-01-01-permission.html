@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>01-01 權限</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-8 max-w-md">
+      <h1 class="mb-6 text-xl font-semibold">練習 01-01｜麥克風權限</h1>
+      <button
+        id="btn-open"
+        type="button"
+        class="rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-5 py-3 font-medium text-cyan-200 hover:bg-cyan-500/20"
+      >
+        開啟設備
+      </button>
+      <div id="status" class="mt-6 flex items-center gap-2 text-slate-400">
+        <span id="icon-ok" class="hidden text-2xl text-lime-400" aria-hidden="true">✓</span>
+        <span id="status-text">尚未取得麥克風權限</span>
+      </div>
+    </div>
+
+    <div
+      id="modal-denied"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      <div class="max-w-sm rounded-2xl border border-red-500/50 bg-red-950 p-6 text-red-100 shadow-xl">
+        <h2 id="modal-title" class="mb-2 text-lg font-bold text-red-200">無法使用麥克風</h2>
+        <p class="mb-4 text-sm text-red-200/90">
+          您已拒絕麥克風權限（NotAllowedError）。請在瀏覽器網址列設定中允許麥克風後重新整理。
+        </p>
+        <button
+          type="button"
+          id="modal-close"
+          class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
+        >
+          關閉
+        </button>
+      </div>
+    </div>
+
+    <script>
+      const btn = document.getElementById("btn-open");
+      const iconOk = document.getElementById("icon-ok");
+      const statusText = document.getElementById("status-text");
+      const modal = document.getElementById("modal-denied");
+      const modalClose = document.getElementById("modal-close");
+
+      modalClose.addEventListener("click", () => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      });
+
+      btn.addEventListener("click", async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log(stream);
+          iconOk.classList.remove("hidden");
+          statusText.textContent = "已取得麥克風，請見 Console 的 MediaStream。";
+          statusText.classList.remove("text-slate-400");
+          statusText.classList.add("text-lime-400");
+        } catch (err) {
+          console.error(err);
+          if (err.name === "NotAllowedError") {
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

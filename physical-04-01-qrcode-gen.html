@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>04-01 條碼產生器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-8 max-w-md">
+      <h1 class="mb-4 text-xl font-semibold">練習 04-01｜QR Code 產生器</h1>
+      <label class="mb-2 block text-sm text-slate-400">輸入文字</label>
+      <input
+        id="text"
+        type="text"
+        value="Hello Physical Web"
+        class="mb-4 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
+      />
+      <button
+        id="gen"
+        class="mr-2 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200"
+      >
+        產生 QR Code
+      </button>
+      <button
+        id="dl"
+        class="rounded-xl border border-lime-400/50 bg-lime-500/10 px-4 py-2 text-sm text-lime-200"
+      >
+        下載 PNG
+      </button>
+      <div id="qr" class="mt-6 inline-block rounded-lg bg-white p-4"></div>
+    </div>
+    <script>
+      const qrEl = document.getElementById("qr");
+      function render() {
+        const text = document.getElementById("text").value || " ";
+        qrEl.innerHTML = "";
+        new QRCode(qrEl, {
+          text: text,
+          width: 220,
+          height: 220,
+          colorDark: "#0f172a",
+          colorLight: "#ffffff",
+        });
+      }
+      document.getElementById("gen").addEventListener("click", render);
+      document.getElementById("dl").addEventListener("click", () => {
+        const canvas = qrEl.querySelector("canvas");
+        const img = qrEl.querySelector("img");
+        let dataUrl;
+        if (canvas) dataUrl = canvas.toDataURL("image/png");
+        else if (img) dataUrl = img.src;
+        else {
+          alert("請先產生 QR Code");
+          return;
+        }
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = "qrcode.png";
+        a.click();
+      });
+      render();
+    </script>
+  </body>
+</html>

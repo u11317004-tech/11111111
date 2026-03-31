@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>02-04 持續音量顏色</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      body { font-family: Inter, sans-serif; transition: background-color 0.3s ease; }
+    </style>
+  </head>
+  <body id="page" class="min-h-screen bg-slate-900 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-8 max-w-lg">
+      <h1 class="mb-4 text-xl font-semibold">練習 02-04｜狀態持續性</h1>
+      <button
+        id="start"
+        class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200"
+      >
+        開始麥克風
+      </button>
+      <label class="mb-2 block text-sm text-slate-400">
+        門檻（RMS）<span id="th-label" class="text-lime-400">0.05</span>
+      </label>
+      <input id="threshold" type="range" min="5" max="100" value="20" class="mb-4 w-full accent-lime-400" />
+      <p class="text-lg">
+        狀態：<span id="state" class="font-bold text-cyan-300">B（安靜）</span>
+      </p>
+      <p class="mt-2 text-sm text-slate-400">
+        音量需<strong class="text-slate-300">持續</strong>高於／低於閾值各滿 3000ms 才切換 A／B。
+      </p>
+    </div>
+    <script>
+      const SUSTAIN_MS = 3000;
+      let audioCtx;
+      let analyser;
+      let dataArray;
+      let stateA = false;
+      let sustainedStart = performance.now();
+      let lastAbove = null;
+
+      function computeRms(timeData) {
+        let sum = 0;
+        const n = timeData.length;
+        for (let i = 0; i < n; i++) {
+          const v = (timeData[i] - 128) / 128;
+          sum += v * v;
+        }
+        return Math.sqrt(sum / n);
+      }
+
+      const page = document.getElementById("page");
+      const slider = document.getElementById("threshold");
+      const thLabel = document.getElementById("th-label");
+      const stateEl = document.getElementById("state");
+
+      function thresholdRms() {
+        return parseInt(slider.value, 10) / 400;
+      }
+
+      function applyState() {
+        if (stateA) {
+          page.className = "min-h-screen bg-amber-900/50 p-6 text-slate-100";
+          stateEl.textContent = "A（吵雜持續）";
+          stateEl.className = "font-bold text-amber-300";
+        } else {
+          page.className = "min-h-screen bg-emerald-950/80 p-6 text-slate-100";
+          stateEl.textContent = "B（安靜持續）";
+          stateEl.className = "font-bold text-emerald-300";
+        }
+      }
+
+      function loop() {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(dataArray);
+        const rms = computeRms(dataArray);
+        const th = thresholdRms();
+        thLabel.textContent = th.toFixed(3);
+        const now = performance.now();
+        const above = rms > th;
+
+        if (lastAbove === null) {
+          lastAbove = above;
+          sustainedStart = now;
+        } else if (above !== lastAbove) {
+          lastAbove = above;
+          sustainedStart = now;
+        } else if (now - sustainedStart >= SUSTAIN_MS) {
+          if (above) stateA = true;
+          else stateA = false;
+          applyState();
+          sustainedStart = now;
+        }
+
+        requestAnimationFrame(loop);
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new AudioContext();
+        const src = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.fftSize);
+        src.connect(analyser);
+        sustainedStart = performance.now();
+        lastAbove = null;
+        applyState();
+        loop();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>06-02 智慧展示牆</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="relative z-10 text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-6xl">
+      <h1 class="mb-2 text-2xl font-semibold">專案 06-02｜智慧展示牆原型</h1>
+      <p class="mb-6 max-w-3xl text-sm text-slate-400">
+        動態偵測喚醒面板、右手腕高於肩膀時切換投影片、麥克風音量超過門檻顯示提示。
+      </p>
+      <button
+        id="btn-start"
+        type="button"
+        class="mb-6 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-200"
+      >
+        啟動攝影機與麥克風
+      </button>
+
+      <div class="grid gap-6 lg:grid-cols-5">
+        <div class="lg:col-span-3">
+          <div class="relative overflow-hidden rounded-xl border border-cyan-500/30">
+            <video id="video" class="sr-only" playsinline></video>
+            <canvas id="overlay" class="max-h-[55vh] w-full bg-black"></canvas>
+          </div>
+        </div>
+        <div class="flex flex-col gap-4 lg:col-span-2">
+          <div
+            id="wake-panel"
+            class="rounded-xl border border-slate-700 bg-slate-900/50 p-4 opacity-40 transition-opacity"
+          >
+            <h2 class="text-sm font-semibold text-slate-500">展示區（動態喚醒）</h2>
+            <p id="slide-text" class="mt-3 text-lg text-slate-600">請在鏡頭前移動以喚醒…</p>
+          </div>
+          <div class="rounded-xl border border-lime-500/30 bg-slate-900/80 p-4">
+            <p class="text-xs uppercase text-slate-500">麥克風</p>
+            <p id="mic-hint" class="mt-2 text-sm text-slate-400">音量正常</p>
+            <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+              <div id="mic-bar" class="h-full w-0 bg-lime-500/80"></div>
+            </div>
+          </div>
+          <p class="text-xs text-slate-500">
+            投影片：<span id="slide-idx" class="font-mono text-cyan-400">1 / 3</span>
+          </p>
+        </div>
+      </div>
+    </div>
+    <script>
+      const RIGHT_SHOULDER = 12;
+      const RIGHT_WRIST = 16;
+      const SLIDES = [
+        "歡迎來到智慧展示牆",
+        "揮手或舉手即可翻頁",
+        "大聲環境將顯示音量提示",
+      ];
+      const MOTION_THRESH = 0.08;
+      const DIFF_PIX = 25;
+      const MIC_THRESH = 0.12;
+
+      const videoEl = document.getElementById("video");
+      const canvas = document.getElementById("overlay");
+      const ctx = canvas.getContext("2d");
+      const wakePanel = document.getElementById("wake-panel");
+      const slideText = document.getElementById("slide-text");
+      const slideIdx = document.getElementById("slide-idx");
+      const micHint = document.getElementById("mic-hint");
+      const micBar = document.getElementById("mic-bar");
+
+      let slide = 0;
+      let awake = false;
+      let prevGray = null;
+      let audioCtx;
+      let analyser;
+      let dataArray;
+      let lastGestureAt = 0;
+
+      const pose = new Pose({
+        locateFile: (file) => "https://cdn.jsdelivr.net/npm/@mediapipe/pose/" + file,
+      });
+      pose.setOptions({ modelComplexity: 1, smoothLandmarks: true });
+
+      function computeRms(timeData) {
+        let sum = 0;
+        const n = timeData.length;
+        for (let i = 0; i < n; i++) {
+          const v = (timeData[i] - 128) / 128;
+          sum += v * v;
+        }
+        return Math.sqrt(sum / n);
+      }
+
+      function toGray(imageData) {
+        const d = imageData.data;
+        const w = imageData.width;
+        const h = imageData.height;
+        const out = new Uint8Array(w * h);
+        let j = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          out[j++] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+        }
+        return out;
+      }
+
+      function motionRatio(prev, next) {
+        if (!prev || prev.length !== next.length) return 0;
+        let c = 0;
+        for (let i = 0; i < prev.length; i++) {
+          if (Math.abs(prev[i] - next[i]) > DIFF_PIX) c++;
+        }
+        return c / prev.length;
+      }
+
+      function micLoop() {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(dataArray);
+        const rms = computeRms(dataArray);
+        micBar.style.width = Math.min(100, rms * 400) + "%";
+        if (rms > MIC_THRESH) {
+          micHint.textContent = "環境音量偏高 — 建議降低背景噪音";
+          micHint.classList.add("text-amber-400");
+        } else {
+          micHint.textContent = "音量正常";
+          micHint.classList.remove("text-amber-400");
+        }
+        requestAnimationFrame(micLoop);
+      }
+
+      pose.onResults((results) => {
+        if (videoEl.videoWidth && (canvas.width !== videoEl.videoWidth || canvas.height !== videoEl.videoHeight)) {
+          canvas.width = videoEl.videoWidth;
+          canvas.height = videoEl.videoHeight;
+        }
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const gray = toGray(img);
+        const ratio = motionRatio(prevGray, gray);
+        prevGray = gray;
+        if (ratio > MOTION_THRESH) {
+          awake = true;
+          wakePanel.classList.remove("opacity-40");
+          wakePanel.classList.add("opacity-100", "border-cyan-500/40");
+          slideText.classList.remove("text-slate-600");
+          slideText.classList.add("text-slate-100");
+        }
+        if (awake) {
+          slideText.textContent = SLIDES[slide];
+          slideIdx.textContent = slide + 1 + " / " + SLIDES.length;
+        } else {
+          slideText.textContent = "請在鏡頭前移動以喚醒…";
+        }
+        if (awake && results.poseLandmarks) {
+          const lm = results.poseLandmarks;
+          const rs = lm[RIGHT_SHOULDER];
+          const rw = lm[RIGHT_WRIST];
+          const now = performance.now();
+          if (rw.y < rs.y && now - lastGestureAt > 1200) {
+            lastGestureAt = now;
+            slide = (slide + 1) % SLIDES.length;
+          }
+        }
+        ctx.restore();
+      });
+
+      const camera = new Camera(videoEl, {
+        onFrame: async () => {
+          await pose.send({ image: videoEl });
+        },
+        width: 640,
+        height: 480,
+      });
+
+      document.getElementById("btn-start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: true,
+        });
+        videoEl.srcObject = stream;
+        await videoEl.play();
+
+        audioCtx = new AudioContext();
+        const src = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.fftSize);
+        src.connect(analyser);
+        micLoop();
+        camera.start();
+      });
+    </script>
+  </body>
+</html>

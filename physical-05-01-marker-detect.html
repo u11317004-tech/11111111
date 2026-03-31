@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>05-01 標記辨識器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/cv.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/src/aruco.js"></script>
+    <style>body { font-family: Inter, sans-serif; }</style>
+  </head>
+  <body class="min-h-screen bg-slate-950 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-6 max-w-4xl">
+      <h1 class="mb-4 text-xl font-semibold">練習 05-01｜ArUco 標記辨識</h1>
+      <button id="start" class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200">
+        開啟攝影機
+      </button>
+      <div class="relative inline-block">
+        <video id="video" class="hidden" playsinline muted></video>
+        <canvas id="canvas" class="max-h-[70vh] rounded-lg border border-cyan-500/30 bg-black"></canvas>
+        <div
+          class="absolute right-2 top-2 rounded-lg border border-lime-400/40 bg-slate-950/90 px-3 py-2 font-mono text-xs text-lime-300"
+        >
+          標記數：<span id="count">0</span>
+        </div>
+      </div>
+      <ul id="list" class="mt-4 font-mono text-sm text-cyan-200"></ul>
+    </div>
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const countEl = document.getElementById("count");
+      const listEl = document.getElementById("list");
+      const detector = new AR.Detector();
+
+      function centerOf(m) {
+        let sx = 0,
+          sy = 0;
+        for (let i = 0; i < m.corners.length; i++) {
+          sx += m.corners[i].x;
+          sy += m.corners[i].y;
+        }
+        return { x: sx / 4, y: sy / 4 };
+      }
+
+      function loop() {
+        requestAnimationFrame(loop);
+        if (video.readyState < video.HAVE_CURRENT_DATA) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const markers = detector.detect(img);
+        countEl.textContent = String(markers.length);
+        listEl.innerHTML = "";
+        markers.forEach((m) => {
+          const c = centerOf(m);
+          ctx.strokeStyle = "#a3e635";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          m.corners.forEach((pt, i) => {
+            if (i === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fillStyle = "#22d3ee";
+          ctx.font = "14px Inter, sans-serif";
+          ctx.fillText("ID " + m.id + " (" + c.x.toFixed(0) + ", " + c.y.toFixed(0) + ")", c.x + 8, c.y);
+          const li = document.createElement("li");
+          li.textContent = "ID " + m.id + "　中心 (" + c.x.toFixed(1) + ", " + c.y.toFixed(1) + ")";
+          listEl.appendChild(li);
+        });
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        loop();
+      });
+    </script>
+  </body>
+</html>

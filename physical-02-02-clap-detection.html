@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>02-02 拍手偵測</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      body { font-family: Inter, sans-serif; transition: background-color 0.15s ease; }
+    </style>
+  </head>
+  <body id="page" class="min-h-screen bg-green-900/40 p-6 text-slate-100">
+    <a class="text-cyan-400 hover:text-lime-400" href="index.html">← 返回課程表</a>
+    <div class="mx-auto mt-8 max-w-lg">
+      <h1 class="mb-4 text-xl font-semibold">練習 02-02｜拍手偵測（瞬間能量）</h1>
+      <button
+        id="start"
+        class="mb-4 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200"
+      >
+        開始麥克風
+      </button>
+      <p class="text-sm text-slate-400">
+        當單一影格內 RMS 暴增超過閾值時切換背景；500ms 冷卻避免重複觸發。
+      </p>
+      <p id="info" class="mt-4 font-mono text-sm text-lime-400"></p>
+    </div>
+    <script>
+      const THRESHOLD_DELTA = 0.08;
+      const COOLDOWN_MS = 500;
+      let audioCtx;
+      let analyser;
+      let dataArray;
+      let prevRms = 0;
+      let lastTrigger = 0;
+      let toggle = false;
+      const page = document.getElementById("page");
+      const info = document.getElementById("info");
+
+      function computeRms(timeData) {
+        let sum = 0;
+        const n = timeData.length;
+        for (let i = 0; i < n; i++) {
+          const v = (timeData[i] - 128) / 128;
+          sum += v * v;
+        }
+        return Math.sqrt(sum / n);
+      }
+
+      function loop() {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(dataArray);
+        const rms = computeRms(dataArray);
+        const delta = rms - prevRms;
+        const now = performance.now();
+        if (delta > THRESHOLD_DELTA && rms > 0.02 && now - lastTrigger >= COOLDOWN_MS) {
+          lastTrigger = now;
+          toggle = !toggle;
+          page.className =
+            "min-h-screen p-6 text-slate-100 transition-colors " +
+            (toggle ? "bg-purple-900/60" : "bg-green-900/40");
+          info.textContent = "觸發！delta=" + delta.toFixed(4) + " @ " + now.toFixed(0);
+        }
+        prevRms = rms;
+        requestAnimationFrame(loop);
+      }
+
+      document.getElementById("start").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new AudioContext();
+        const src = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.fftSize);
+        src.connect(analyser);
+        loop();
+      });
+    </script>
+  </body>
+</html>
